@@ -1,9 +1,34 @@
 import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, ActivityIndicator, View } from 'react-native';
-import { Text, DataTable, Card, Divider } from 'react-native-paper';
+import { 
+  ScrollView, 
+  StyleSheet, 
+  ActivityIndicator, 
+  View, 
+  TouchableOpacity,
+  Dimensions,
+  Platform,
+  RefreshControl,
+  Linking
+} from 'react-native';
+import { 
+  Text, 
+  DataTable, 
+  Card, 
+  IconButton,
+  Chip,
+  Divider,
+  Badge
+} from 'react-native-paper';
 import { useLocalSearchParams } from 'expo-router';
 import * as Animatable from 'react-native-animatable';
+import { LinearGradient } from 'expo-linear-gradient';
+import { MaterialIcons, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import api from '../../Services/Api';
+import { toast } from '../../lib/toast';
+
+const { width } = Dimensions.get('window');
+const isWeb = Platform.OS === 'web';
+const isTablet = width >= 768;
 
 export default function AmortizacionCalculada() {
   const { personaID } = useLocalSearchParams();
@@ -11,179 +36,885 @@ export default function AmortizacionCalculada() {
   const [resumen, setResumen] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [expandedCard, setExpandedCard] = useState(null);
+
+  const loadData = async () => {
+    try {
+      const [tabRes, capPago, flujoCaja, endeud, ltvRes] = await Promise.all([
+        api.get(`/amortizacion/calculada/persona/${personaID}/`),
+        api.get(`/evaluar-capacidad-pago/persona/${personaID}/`),
+        api.get(`/analizar-flujo-caja/persona/${personaID}/`),
+        api.get(`/cacular-indice-endeudamineto/persona/${personaID}/`),
+        api.get(`/api/ltv/${personaID}/`)
+      ]);
+
+      setData(tabRes.data);
+      setResumen({
+        capacidad: capPago.data,
+        flujoCaja: flujoCaja.data,
+        endeudamiento: endeud.data,
+        ltv: ltvRes.data,
+      });
+    } catch (err) {
+      console.error(err.response?.data || err);
+      setError('Error al cargar los datos');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchAll = async () => {
-      try {
-        const [tabRes, capPago, flujoCaja, endeud, ltvRes] = await Promise.all([
-          api.get(`/amortizacion/calculada/persona/${personaID}/`),
-          api.get(`/evaluar-capacidad-pago/persona/${personaID}/`),
-          api.get(`/analizar-flujo-caja/persona/${personaID}/`),
-          api.get(`/cacular-indice-endeudamineto/persona/${personaID}/`),
-          api.get(`/api/ltv/${personaID}/`)
-        ]);
-
-        setData(tabRes.data);
-        setResumen({
-          capacidad: capPago.data,
-          flujoCaja: flujoCaja.data,
-          endeudamiento: endeud.data,
-          ltv: ltvRes.data,
-        });
-      } catch (err) {
-        console.error(err.response?.data || err);
-        setError('Error al cargar los datos');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (personaID) fetchAll();
+    if (personaID) loadData();
   }, [personaID]);
 
-  if (loading) return <ActivityIndicator style={{ marginTop: 30 }} size="large" color="#6200ee" />;
-  if (error) return <Text style={styles.errorText}>{error}</Text>;
-  if (!data) return null;
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadData();
+  };
+
+  const generatePDF = async () => {
+  try {
+    // profesional
+    const response = await api.get(`/reporte-credito-profesional/${personaID}/`, {
+      responseType: 'blob'
+    });
+
+    if (isWeb) {
+      // Para web
+      const blob = new Blob([response.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Reporte_Credito_${personaID}_${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } else {
+      // Para móvil - versión simple
+      const responseSimple = await api.get(`/reporte-credito-simple/${personaID}/`, {
+        responseType: 'blob'
+      });
+      //   expo-sharing para abrir el PDF
+      toast.show({
+        type: 'info',
+        text1: 'PDF generado',
+        text2: 'Consulte la versión web para un formato más completo.',
+      });
+    }
+  } catch (err) {
+    console.error('Error generando PDF:', err);
+    toast.show({
+      type: 'error',
+      text1: 'Error al generar PDF',
+      text2: 'Por favor, intente nuevamente.',
+    });
+  }
+};
 
   const fmtCurrency = (num) =>
-    num !== null && num !== undefined ? `$${Number(num).toFixed(2)}` : 'N/A';
+    num !== null && num !== undefined ? `$${Number(num).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'N/A';
 
   const fmtPercent = (num) =>
     num !== null && num !== undefined ? `${(Number(num) * 100).toFixed(2)}%` : 'N/A';
 
+  const getStatusColor = (status) => {
+    switch (status?.toLowerCase()) {
+      case 'aprobado':
+      case 'favorable':
+      case 'bueno':
+        return '#10B981';
+      case 'pendiente':
+      case 'moderado':
+        return '#F59E0B';
+      case 'rechazado':
+      case 'alto':
+      case 'desfavorable':
+        return '#EF4444';
+      default:
+        return '#6B7280';
+    }
+  };
+
+  const toggleCard = (cardId) => {
+    setExpandedCard(expandedCard === cardId ? null : cardId);
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#6366F1" />
+        <Text style={styles.loadingText}>Cargando datos de análisis...</Text>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.errorContainer}>
+        <MaterialIcons name="error-outline" size={64} color="#EF4444" />
+        <Text style={styles.errorText}>{error}</Text>
+        <TouchableOpacity style={styles.retryButton} onPress={loadData}>
+          <Text style={styles.retryButtonText}>Reintentar</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Animatable.View animation="fadeInUp" duration={800} style={styles.cardContainer}>
-        <Card style={styles.card}>
-          <Card.Content>
-            <Text style={styles.title}>Resumen de Capacidad de Pago</Text>
-            <DataRow label="Ingresos Mensuales Totales" value={fmtCurrency(resumen.capacidad?.IngresosMensualesTotales)} />
-            <DataRow label="Gastos Mensuales Totales" value={fmtCurrency(resumen.capacidad?.GastosMensualesTotales)} />
-            <DataRow label="Flujo de Caja Libre" value={fmtCurrency(resumen.capacidad?.FlujoCajaLibre)} />
-            <DataRow label="Cuota Estimada" value={fmtCurrency(resumen.capacidad?.CuotaMensual)} />
-            <DataRow label="DSCR" value={resumen.capacidad?.DSCR !== null ? resumen.capacidad.DSCR.toFixed(2) : 'N/A'} />
-            <DataRow label="Estado de Crédito" value={resumen.capacidad?.EstadoCredito || 'N/A'} />
-          </Card.Content>
-        </Card>
+    <ScrollView 
+      contentContainerStyle={styles.container}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+      }
+    >
+      {/* Header con título y acciones */}
+      <Animatable.View animation="fadeInDown" duration={600}>
+        <LinearGradient
+          colors={['#6366F1', '#8B5CF6']}
+          style={styles.header}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+        >
+          <View style={[styles.headerContent, !isTablet && styles.headerContentMobile]}>
+            <View style={!isTablet && styles.headerTextBlock}>
+              <Text style={styles.headerTitle}>Análisis de Crédito</Text>
+              <Text style={styles.headerSubtitle}>Resumen completo de indicadores financieros</Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.downloadButton, !isTablet && styles.downloadButtonMobile]}
+              onPress={generatePDF}
+            >
+              <MaterialIcons name="picture-as-pdf" size={24} color="#fff" />
+              <Text style={styles.downloadButtonText}>Descargar PDF</Text>
+            </TouchableOpacity>
+          </View>
+        </LinearGradient>
       </Animatable.View>
 
-    <Animatable.View animation="fadeInUp" duration={800} delay={100} style={styles.cardContainer}>
-        <Card style={styles.card}>
-        <Card.Content>
-            <Text style={styles.title}>Análisis de Flujo de Caja</Text>
-            <DataRow label="Ingreso Mensual" value={fmtCurrency(resumen.flujoCaja?.IngresoMensual)} />
-            <DataRow label="Gastos Mensuales" value={fmtCurrency(resumen.flujoCaja?.GastosMensuales)} />
-            <DataRow label="Flujo de Caja Libre" value={fmtCurrency(resumen.flujoCaja?.FlujoCajaLibre)} />
+      {/* Indicadores Principales */}
+      <View style={styles.indicatorsGrid}>
+        <Animatable.View 
+          animation="fadeInUp" 
+          duration={600} 
+          delay={100}
+          style={[styles.indicatorCard, { backgroundColor: '#F0F9FF' }]}
+        >
+          <View style={styles.indicatorHeader}>
+            <View style={[styles.iconContainer, { backgroundColor: '#3B82F6' }]}>
+              <FontAwesome5 name="money-check-alt" size={20} color="#fff" />
+            </View>
+            <Text style={styles.indicatorTitle}>Capacidad de Pago</Text>
+          </View>
+          <View style={styles.indicatorContent}>
+            <IndicatorItem 
+              label="DSCR" 
+              value={resumen.capacidad?.DSCR?.toFixed(2) || 'N/A'}
+              color={getStatusColor(resumen.capacidad?.EstadoCredito)}
+            />
+            <IndicatorItem 
+              label="Flujo Libre" 
+              value={fmtCurrency(resumen.capacidad?.FlujoCajaLibre)}
+            />
+            <IndicatorItem 
+              label="Estado" 
+              value={resumen.capacidad?.EstadoCredito || 'N/A'}
+              isBadge={true}
+              color={getStatusColor(resumen.capacidad?.EstadoCredito)}
+            />
+          </View>
+        </Animatable.View>
+
+        <Animatable.View 
+          animation="fadeInUp" 
+          duration={600} 
+          delay={200}
+          style={[styles.indicatorCard, { backgroundColor: '#F0FDF4' }]}
+        >
+          <View style={styles.indicatorHeader}>
+            <View style={[styles.iconContainer, { backgroundColor: '#10B981' }]}>
+              <FontAwesome5 name="chart-line" size={20} color="#fff" />
+            </View>
+            <Text style={styles.indicatorTitle}>Endeudamiento</Text>
+          </View>
+          <View style={styles.indicatorContent}>
+            <IndicatorItem 
+              label="Índice" 
+              value={fmtPercent(resumen.endeudamiento?.IndiceEndeudamiento)}
+              color={getStatusColor(resumen.endeudamiento?.EvaluacionEndeudamiento)}
+            />
+            <IndicatorItem 
+              label="Evaluación" 
+              value={resumen.endeudamiento?.EvaluacionEndeudamiento || 'N/A'}
+              isBadge={true}
+              color={getStatusColor(resumen.endeudamiento?.EvaluacionEndeudamiento)}
+            />
+          </View>
+        </Animatable.View>
+
+        <Animatable.View 
+          animation="fadeInUp" 
+          duration={600} 
+          delay={300}
+          style={[styles.indicatorCard, { backgroundColor: '#FEF3F2' }]}
+        >
+          <View style={styles.indicatorHeader}>
+            <View style={[styles.iconContainer, { backgroundColor: '#EF4444' }]}>
+              <FontAwesome5 name="home" size={20} color="#fff" />
+            </View>
+            <Text style={styles.indicatorTitle}>LTV</Text>
+          </View>
+          <View style={styles.indicatorContent}>
+            <IndicatorItem 
+              label="Porcentaje" 
+              value={resumen.ltv?.LTV ? `${resumen.ltv.LTV.toFixed(2)}%` : 'N/A'}
+              color={getStatusColor(resumen.ltv?.Interpretacion)}
+            />
+            <IndicatorItem 
+              label="Interpretación" 
+              value={resumen.ltv?.Interpretacion || 'N/A'}
+              isBadge={true}
+              color={getStatusColor(resumen.ltv?.Interpretacion)}
+            />
+          </View>
+        </Animatable.View>
+      </View>
+
+      {/* Tarjetas de Detalle */}
+      <Animatable.View animation="fadeInUp" duration={600} delay={400}>
+        <TouchableOpacity onPress={() => toggleCard('capacidad')}>
+          <Card style={styles.detailCard}>
+            <Card.Content>
+              <View style={styles.cardHeader}>
+                <View style={styles.cardTitleContainer}>
+                  <MaterialIcons name="assessment" size={24} color="#6366F1" />
+                  <Text style={styles.detailCardTitle}>Detalle de Capacidad de Pago</Text>
+                </View>
+                <MaterialIcons 
+                  name={expandedCard === 'capacidad' ? 'expand-less' : 'expand-more'} 
+                  size={24} 
+                  color="#6B7280" 
+                />
+              </View>
+              {expandedCard === 'capacidad' && (
+                <Animatable.View animation="fadeIn" duration={300}>
+                  <Divider style={styles.divider} />
+                  <View style={styles.detailContent}>
+                    <DetailItem
+                      label="Ingresos Totales"
+                      value={fmtCurrency(resumen.capacidad?.IngresosMensualesTotales)}
+                      stacked={!isTablet}
+                    />
+                    <DetailItem
+                      label="Gastos Totales"
+                      value={fmtCurrency(resumen.capacidad?.GastosMensualesTotales)}
+                      stacked={!isTablet}
+                    />
+                    <DetailItem
+                      label="Flujo de Caja Libre"
+                      value={fmtCurrency(resumen.capacidad?.FlujoCajaLibre)}
+                      stacked={!isTablet}
+                    />
+                    <DetailItem
+                      label="Cuota Estimada"
+                      value={fmtCurrency(resumen.capacidad?.CuotaMensual)}
+                      stacked={!isTablet}
+                    />
+                  </View>
+                </Animatable.View>
+              )}
             </Card.Content>
-        </Card>
-    </Animatable.View>
+          </Card>
+        </TouchableOpacity>
+      </Animatable.View>
 
+      <Animatable.View animation="fadeInUp" duration={600} delay={500}>
+        <TouchableOpacity onPress={() => toggleCard('flujo')}>
+          <Card style={styles.detailCard}>
+            <Card.Content>
+              <View style={styles.cardHeader}>
+                <View style={styles.cardTitleContainer}>
+                  <MaterialIcons name="trending-up" size={24} color="#10B981" />
+                  <Text style={styles.detailCardTitle}>Análisis de Flujo de Caja</Text>
+                </View>
+                <MaterialIcons 
+                  name={expandedCard === 'flujo' ? 'expand-less' : 'expand-more'} 
+                  size={24} 
+                  color="#6B7280" 
+                />
+              </View>
+              {expandedCard === 'flujo' && (
+                <Animatable.View animation="fadeIn" duration={300}>
+                  <Divider style={styles.divider} />
+                  <View style={styles.detailContent}>
+                    <DetailItem
+                      label="Ingreso Mensual"
+                      value={fmtCurrency(resumen.flujoCaja?.IngresoMensual)}
+                      stacked={!isTablet}
+                    />
+                    <DetailItem
+                      label="Gastos Mensuales"
+                      value={fmtCurrency(resumen.flujoCaja?.GastosMensuales)}
+                      stacked={!isTablet}
+                    />
+                    <DetailItem
+                      label="Flujo de Caja Libre"
+                      value={fmtCurrency(resumen.flujoCaja?.FlujoCajaLibre)}
+                      stacked={!isTablet}
+                    />
+                  </View>
+                </Animatable.View>
+              )}
+            </Card.Content>
+          </Card>
+        </TouchableOpacity>
+      </Animatable.View>
 
-      <Animatable.View animation="fadeInUp" duration={800} delay={200} style={styles.cardContainer}>
-        <Card style={styles.card}>
+      {/* Tabla de Amortización */}
+      <Animatable.View animation="fadeInUp" duration={600} delay={600}>
+        <Card style={styles.tableCard}>
           <Card.Content>
-            <Text style={styles.title}>Índice de Endeudamiento</Text>
-            <DataRow label="Índice Endeudamiento" value={fmtPercent(resumen.endeudamiento?.IndiceEndeudamiento)} />
-            <DataRow label="Evaluación" value={resumen.endeudamiento?.EvaluacionEndeudamiento || 'N/A'} />
+            <View style={[styles.tableHeader, !isTablet && styles.tableHeaderMobile]}>
+              <View style={styles.cardTitleContainer}>
+                <MaterialIcons name="table-chart" size={24} color="#8B5CF6" />
+                <Text style={styles.tableTitle}>Tabla de Amortización</Text>
+              </View>
+              <Chip 
+                icon="format-list-numbered" 
+                mode="outlined"
+                
+                style={styles.tableChip}
+              >
+                {data?.TablaAmortizacion?.length || 0} Meses
+              </Chip>
+            </View>
+            
+            {isTablet ? (
+              <View style={styles.tableScrollView}>
+                <DataTable style={[styles.dataTable, styles.dataTableFull]}>
+                  <DataTable.Header style={styles.tableHeaderRow}>
+                    <DataTable.Title style={[styles.tableCell, styles.tableCellWide]}>Mes</DataTable.Title>
+                    <DataTable.Title numeric style={[styles.tableCell, styles.tableCellWide]}>Cuota</DataTable.Title>
+                    <DataTable.Title numeric style={[styles.tableCell, styles.tableCellWide]}>Capital</DataTable.Title>
+                    <DataTable.Title numeric style={[styles.tableCell, styles.tableCellWide]}>Interés</DataTable.Title>
+                    <DataTable.Title numeric style={[styles.tableCell, styles.tableCellWide]}>Capital Vivo</DataTable.Title>
+                    <DataTable.Title numeric style={[styles.tableCell, styles.tableCellWide]}>Saldo</DataTable.Title>
+                  </DataTable.Header>
+
+                  {data?.TablaAmortizacion?.map((item, index) => (
+                    <DataTable.Row
+                      key={item.Mes}
+                      style={[
+                        styles.tableRow,
+                        index % 2 === 0 && styles.evenRow
+                      ]}
+                    >
+                      <DataTable.Cell style={[styles.tableCell, styles.tableCellWide]}>
+                        <Text style={styles.monthText}>Mes {item.Mes}</Text>
+                      </DataTable.Cell>
+                      <DataTable.Cell numeric style={[styles.tableCell, styles.tableCellWide]}>
+                        <Text style={styles.amountText}>{fmtCurrency(item.Cuota)}</Text>
+                      </DataTable.Cell>
+                      <DataTable.Cell numeric style={[styles.tableCell, styles.tableCellWide]}>
+                        <Text style={styles.amountText}>{fmtCurrency(item.Capital)}</Text>
+                      </DataTable.Cell>
+                      <DataTable.Cell numeric style={[styles.tableCell, styles.tableCellWide]}>
+                        <Text style={[styles.amountText, styles.interestText]}>
+                          {fmtCurrency(item.Interes)}
+                        </Text>
+                      </DataTable.Cell>
+                      <DataTable.Cell numeric style={[styles.tableCell, styles.tableCellWide]}>
+                        <Text style={styles.amountText}>{fmtCurrency(item.CapitalVivo)}</Text>
+                      </DataTable.Cell>
+                      <DataTable.Cell numeric style={[styles.tableCell, styles.tableCellWide]}>
+                        <View style={styles.progressContainer}>
+                          <View
+                            style={[
+                              styles.progressBar,
+                              {
+                                width: `${Math.min(100, (item.CapitalVivo / (data?.TablaAmortizacion?.[0]?.CapitalVivo || 1)) * 100)}%`
+                              }
+                            ]}
+                          />
+                          <Text style={styles.progressText}>
+                            {Math.round((item.CapitalVivo / (data?.TablaAmortizacion?.[0]?.CapitalVivo || 1)) * 100)}%
+                          </Text>
+                        </View>
+                      </DataTable.Cell>
+                    </DataTable.Row>
+                  ))}
+                </DataTable>
+              </View>
+            ) : (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.tableScrollView}
+              >
+                <DataTable style={styles.dataTable}>
+                  <DataTable.Header style={styles.tableHeaderRow}>
+                    <DataTable.Title style={[styles.tableCell, styles.tableCellMobile]}>Mes</DataTable.Title>
+                    <DataTable.Title numeric style={[styles.tableCell, styles.tableCellMobile]}>Cuota</DataTable.Title>
+                    <DataTable.Title numeric style={[styles.tableCell, styles.tableCellMobile]}>Capital</DataTable.Title>
+                    <DataTable.Title numeric style={[styles.tableCell, styles.tableCellMobile]}>Interés</DataTable.Title>
+                    <DataTable.Title numeric style={[styles.tableCell, styles.tableCellMobile]}>Capital Vivo</DataTable.Title>
+                    <DataTable.Title numeric style={[styles.tableCell, styles.tableCellMobile]}>Saldo</DataTable.Title>
+                  </DataTable.Header>
+
+                  {data?.TablaAmortizacion?.map((item, index) => (
+                    <DataTable.Row
+                      key={item.Mes}
+                      style={[
+                        styles.tableRow,
+                        index % 2 === 0 && styles.evenRow
+                      ]}
+                    >
+                      <DataTable.Cell style={[styles.tableCell, styles.tableCellMobile]}>
+                        <Text style={styles.monthText}>Mes {item.Mes}</Text>
+                      </DataTable.Cell>
+                      <DataTable.Cell numeric style={[styles.tableCell, styles.tableCellMobile]}>
+                        <Text style={styles.amountText}>{fmtCurrency(item.Cuota)}</Text>
+                      </DataTable.Cell>
+                      <DataTable.Cell numeric style={[styles.tableCell, styles.tableCellMobile]}>
+                        <Text style={styles.amountText}>{fmtCurrency(item.Capital)}</Text>
+                      </DataTable.Cell>
+                      <DataTable.Cell numeric style={[styles.tableCell, styles.tableCellMobile]}>
+                        <Text style={[styles.amountText, styles.interestText]}>
+                          {fmtCurrency(item.Interes)}
+                        </Text>
+                      </DataTable.Cell>
+                      <DataTable.Cell numeric style={[styles.tableCell, styles.tableCellMobile]}>
+                        <Text style={styles.amountText}>{fmtCurrency(item.CapitalVivo)}</Text>
+                      </DataTable.Cell>
+                      <DataTable.Cell numeric style={[styles.tableCell, styles.tableCellMobile]}>
+                        <View style={styles.progressContainer}>
+                          <View
+                            style={[
+                              styles.progressBar,
+                              {
+                                width: `${Math.min(100, (item.CapitalVivo / (data?.TablaAmortizacion?.[0]?.CapitalVivo || 1)) * 100)}%`
+                              }
+                            ]}
+                          />
+                          <Text style={styles.progressText}>
+                            {Math.round((item.CapitalVivo / (data?.TablaAmortizacion?.[0]?.CapitalVivo || 1)) * 100)}%
+                          </Text>
+                        </View>
+                      </DataTable.Cell>
+                    </DataTable.Row>
+                  ))}
+                </DataTable>
+              </ScrollView>
+            )}
+
+            <View style={styles.tableFooter}>
+              <View style={[styles.summaryContainer, !isTablet && styles.summaryContainerMobile]}>
+                <Text style={styles.summaryText}>
+                  Total Pagado: {fmtCurrency(data?.TablaAmortizacion?.reduce((sum, item) => sum + (item.Cuota || 0), 0))}
+                </Text>
+                <Text style={styles.summaryText}>
+                  Interés Total: {fmtCurrency(data?.TablaAmortizacion?.reduce((sum, item) => sum + (item.Interes || 0), 0))}
+                </Text>
+              </View>
+            </View>
           </Card.Content>
         </Card>
       </Animatable.View>
 
-      <Animatable.View animation="fadeInUp" duration={800} delay={400} style={styles.cardContainer}>
-        <Card style={styles.card}>
-          <Card.Content>
-            <Text style={styles.title}>Loan to Value (LTV)</Text>
-            <DataRow label="Monto Préstamo" value={fmtCurrency(resumen.ltv?.MontoPrestamo)} />
-            <DataRow label="Monto Garantía" value={fmtCurrency(resumen.ltv?.MontoGarantia)} />
-            <DataRow label="LTV" value={resumen.ltv?.LTV !== null ? `${resumen.ltv.LTV.toFixed(2)}%` : 'N/A'} />
-            <DataRow label="Interpretación" value={resumen.ltv?.Interpretacion || 'N/A'} />
-          </Card.Content>
-        </Card>
-      </Animatable.View>
-
-      <Animatable.View animation="fadeIn" delay={600} duration={600}>
-        <Card style={styles.card}>
-          <Card.Content>
-            <Text style={styles.title}>Tabla de Amortización</Text>
-            <DataTable>
-              <DataTable.Header style={styles.headerRow}>
-                <DataTable.Title>Mes</DataTable.Title>
-                <DataTable.Title numeric>Cuota</DataTable.Title>
-                <DataTable.Title numeric>Capital</DataTable.Title>
-                <DataTable.Title numeric>Interés</DataTable.Title>
-                <DataTable.Title numeric>Capital Vivo</DataTable.Title>
-              </DataTable.Header>
-              {data.TablaAmortizacion.map((item) => (
-                <DataTable.Row key={item.Mes} style={styles.row}>
-                  <DataTable.Cell>{item.Mes}</DataTable.Cell>
-                  <DataTable.Cell numeric>{fmtCurrency(item.Cuota)}</DataTable.Cell>
-                  <DataTable.Cell numeric>{fmtCurrency(item.Capital)}</DataTable.Cell>
-                  <DataTable.Cell numeric>{fmtCurrency(item.Interes)}</DataTable.Cell>
-                  <DataTable.Cell numeric>{fmtCurrency(item.CapitalVivo)}</DataTable.Cell>
-                </DataTable.Row>
-              ))}
-            </DataTable>
-          </Card.Content>
-        </Card>
+      {/* Botón de acción */}
+      <Animatable.View animation="fadeInUp" duration={600} delay={700}>
+        <TouchableOpacity 
+          style={styles.actionButton}
+          onPress={generatePDF}
+        >
+          <LinearGradient
+            colors={['#6366F1', '#8B5CF6']}
+            style={styles.actionButtonGradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+          >
+            <MaterialIcons name="download" size={24} color="#fff" />
+            <Text style={styles.actionButtonText}>Descargar Reporte Completo</Text>
+          </LinearGradient>
+        </TouchableOpacity>
       </Animatable.View>
     </ScrollView>
   );
 }
 
-function DataRow({ label, value }) {
+// Componentes auxiliares
+function IndicatorItem({ label, value, color = '#374151', isBadge = false }) {
   return (
-    <View style={styles.dataRow}>
-      <Text style={styles.label}>{label}</Text>
-      <Text style={styles.value}>{value}</Text>
+    <View style={styles.indicatorItem}>
+      <Text style={styles.indicatorLabel}>{label}</Text>
+      {isBadge ? (
+        <View style={[styles.badge, { backgroundColor: color + '20' }]}>
+          <Text style={[styles.badgeText, { color }]}>{value}</Text>
+        </View>
+      ) : (
+        <Text style={[styles.indicatorValue, { color }]}>{value}</Text>
+      )}
+    </View>
+  );
+}
+
+function DetailItem({ label, value, stacked = false }) {
+  return (
+    <View style={[styles.detailItem, stacked && styles.detailItemStacked]}>
+      <Text style={styles.detailLabel}>{label}</Text>
+      <Text style={styles.detailValue}>{value}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    padding: 16,
-    backgroundColor: '#f9fafb',
+    flexGrow: 1,
+    backgroundColor: '#F9FAFB',
+    paddingBottom: 40,
   },
-  cardContainer: {
-    marginBottom: 20,
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
   },
-  card: {
-    backgroundColor: '#fff',
-    elevation: 5,
-    borderRadius: 12,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#6200ee',
-    marginBottom: 16,
-  },
-  dataRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 8,
-    borderBottomColor: '#eee',
-    borderBottomWidth: 1,
-  },
-  label: {
+  loadingText: {
+    marginTop: 16,
     fontSize: 16,
-    color: '#555',
+    color: '#6B7280',
   },
-  value: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#222',
-  },
-  headerRow: {
-    backgroundColor: '#e3e3e3',
-  },
-  row: {
-    backgroundColor: '#fff',
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    padding: 20,
   },
   errorText: {
-    color: 'red',
-    textAlign: 'center',
-    margin: 20,
+    marginTop: 16,
     fontSize: 16,
+    color: '#374151',
+    textAlign: 'center',
+  },
+  retryButton: {
+    marginTop: 20,
+    backgroundColor: '#6366F1',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  header: {
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    marginBottom: 24,
+  },
+  headerContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+  },
+  headerContentMobile: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+  },
+  headerTextBlock: {
+    width: '100%',
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: '#E0E7FF',
+    marginTop: 4,
+  },
+  downloadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    gap: 8,
+  },
+  downloadButtonMobile: {
+    alignSelf: 'stretch',
+    justifyContent: 'center',
+  },
+  downloadButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  indicatorsGrid: {
+    flexDirection: isTablet ? 'row' : 'column',
+    gap: 16,
+    paddingHorizontal: 16,
+    marginBottom: 24,
+  },
+  indicatorCard: {
+    flex: 1,
+    padding: 20,
+    borderRadius: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+  },
+  indicatorHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  iconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  indicatorTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  indicatorContent: {
+    gap: 12,
+  },
+  indicatorItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  indicatorLabel: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  indicatorValue: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  badge: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  badgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  detailCard: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    borderRadius: 16,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  cardTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flexWrap: 'wrap',
+    flex: 1,
+  },
+  detailCardTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111827',
+    flexShrink: 1,
+  },
+  divider: {
+    marginVertical: 12,
+  },
+  detailContent: {
+    gap: 12,
+  },
+  detailItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  detailItemStacked: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: 6,
+  },
+  detailLabel: {
+    fontSize: 15,
+    color: '#4B5563',
+  },
+  detailValue: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  tableCard: {
+    marginHorizontal: 16,
+    marginBottom: 24,
+    borderRadius: 16,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+  },
+  tableHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 12,
+  },
+  tableHeaderMobile: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+  },
+  tableTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  tableChip: {
+    backgroundColor: '#F3F4F6',
+  },
+  tableScrollView: {
+    borderRadius: 12,
+    backgroundColor: '#F9FAFB',
+  },
+  dataTable: {
+    minWidth: isTablet ? width - 32 : width * 1.5,
+  },
+  dataTableFull: {
+    width: '100%',
+  },
+  tableHeaderRow: {
+    backgroundColor: '#F3F4F6',
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+  },
+  tableRow: {
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  evenRow: {
+    backgroundColor: '#F9FAFB',
+  },
+  tableCell: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    minWidth: 120,
+  },
+  tableCellWide: {
+    minWidth: 140,
+  },
+  tableCellMobile: {
+    minWidth: 96,
+    paddingHorizontal: 12,
+  },
+  monthText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#374151',
+  },
+  amountText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  interestText: {
+    color: '#DC2626',
+  },
+  progressContainer: {
+    width: 80,
+    height: 24,
+    backgroundColor: '#E5E7EB',
+    borderRadius: 12,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: '#10B981',
+    position: 'absolute',
+    left: 0,
+    top: 0,
+  },
+  progressText: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    textAlign: 'center',
+    lineHeight: 24,
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  tableFooter: {
+    marginTop: 20,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  summaryContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  summaryContainerMobile: {
+    flexDirection: 'column',
+    gap: 8,
+  },
+  summaryText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  actionButton: {
+    marginHorizontal: 16,
+    borderRadius: 12,
+    overflow: 'hidden',
+    elevation: 4,
+    shadowColor: '#6366F1',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+  },
+  actionButtonGradient: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 16,
+    gap: 12,
+  },
+  actionButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
+
