@@ -7,13 +7,18 @@ import {
   StyleSheet,
   TouchableOpacity,
   View,
+  Modal,
+  TouchableWithoutFeedback,
+  FlatList,
 } from 'react-native';
 import {
   Button,
-  Menu,
   Text,
   TextInput,
+  Card,
+  Portal,
 } from 'react-native-paper';
+import { MaterialIcons } from '@expo/vector-icons';
 import api from '../../Services/Api';
 
 const dropdownOptions = {
@@ -85,7 +90,7 @@ const validarIdentificacion = (tipo, numero) => {
     case 'NIT':
       return esNITValido(numero);
     case 'Otro':
-      return true; // No validar formato
+      return true; 
     default:
       return false;
   }
@@ -122,8 +127,16 @@ export default function HomeScreen() {
   });
 
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [menuVisible, setMenuVisible] = useState({});
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [dropdownData, setDropdownData] = useState({
+    key: '',
+    label: '',
+    options: [],
+    section: '',
+    field: '',
+  });
   const [activeDateField, setActiveDateField] = useState('');
+  const [activeSection, setActiveSection] = useState(0);
 
   const handleInput = (section, field, value) => {
     if (section === 'persona') {
@@ -151,16 +164,22 @@ export default function HomeScreen() {
     if (section === 'conyuge') setConyuge(prev => ({ ...prev, [field]: value }));
   };
 
-  const toggleMenu = (key) => {
-    setMenuVisible(prev => ({ ...prev, [key]: !prev[key] }));
-  };
-
   const handleDateChange = (event, selectedDate) => {
     setShowDatePicker(false);
     if (!selectedDate) return;
     const formatted = selectedDate.toISOString().split('T')[0];
     handleInput('persona', activeDateField, formatted);
     setActiveDateField('');
+  };
+
+  const openDropdown = (key, label, options, section, field) => {
+    setDropdownData({ key, label, options, section, field });
+    setShowDropdown(true);
+  };
+
+  const handleSelectOption = (option) => {
+    handleInput(dropdownData.section, dropdownData.field, option);
+    setShowDropdown(false);
   };
 
   const handleGuardar = async () => {
@@ -202,185 +221,534 @@ export default function HomeScreen() {
     }
   };
 
+  const renderDropdown = (key, label, options, section, field) => {
+    const value = section === 'persona' ? persona[field] : 
+                  section === 'solicitud' ? solicitud[field] : 
+                  conyuge[field];
+
+    return (
+      <View key={key} style={styles.inputContainer}>
+        <TouchableOpacity onPress={() => openDropdown(key, label, options, section, field)}>
+          <View style={styles.dropdownContainer}>
+            <Text style={styles.dropdownLabel}>{label}</Text>
+            <View style={styles.dropdownValueContainer}>
+              <Text style={[
+                styles.dropdownValue,
+                !value && styles.placeholder
+              ]}>
+                {value || 'Seleccionar'}
+              </Text>
+              <MaterialIcons name="arrow-drop-down" size={24} color="#666" />
+            </View>
+          </View>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  const renderSectionHeader = (title, icon, sectionIndex) => (
+    <TouchableOpacity 
+      style={[
+        styles.sectionHeader,
+        activeSection === sectionIndex && styles.activeSectionHeader
+      ]}
+      onPress={() => setActiveSection(sectionIndex)}
+    >
+      <View style={styles.sectionHeaderContent}>
+        <MaterialIcons name={icon} size={24} color={activeSection === sectionIndex ? "#fff" : "#2196F3"} />
+        <Text style={[
+          styles.sectionHeaderText,
+          activeSection === sectionIndex && styles.activeSectionHeaderText
+        ]}>
+          {title}
+        </Text>
+      </View>
+      <MaterialIcons 
+        name={activeSection === sectionIndex ? "keyboard-arrow-up" : "keyboard-arrow-down"} 
+        size={24} 
+        color={activeSection === sectionIndex ? "#fff" : "#666"} 
+      />
+    </TouchableOpacity>
+  );
+
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text variant="headlineMedium" style={styles.heading}>Datos Personales</Text>
-
-      {['Nombres', 'Apellidos', 'NumeroIdentificacion', 'Nacionalidad'].map(field => (
-        <TextInput
-          key={field}
-          label={field}
-          mode="outlined"
-          value={persona[field]}
-          onChangeText={text => handleInput('persona', field, text)}
-          style={styles.input}
-        />
-      ))}
-
-      {['TipoIdentificacion', 'EstadoCivil', 'Sexo'].map(field => (
-        <View key={field} style={styles.input}>
-          <Menu
-            visible={menuVisible[field]}
-            onDismiss={() => toggleMenu(field)}
-            anchor={
-              <TouchableOpacity onPress={() => toggleMenu(field)}>
-                <TextInput
-                  label={field}
-                  mode="outlined"
-                  value={persona[field]}
-                  editable={false}
-                  pointerEvents="none"
-                />
-              </TouchableOpacity>
-            }
-          >
-            {dropdownOptions[field].map(option => (
-              <Menu.Item
-                key={option}
-                onPress={() => {
-                  handleInput('persona', field, option);
-                  toggleMenu(field);
-                }}
-                title={option}
-              />
-            ))}
-          </Menu>
+    <>
+      <ScrollView contentContainerStyle={styles.container}>
+        <View style={styles.header}>
+          <Text variant="headlineMedium" style={styles.headerTitle}>Solicitud de Crédito</Text>
+          <Text variant="bodyMedium" style={styles.headerSubtitle}>Complete todos los campos requeridos</Text>
         </View>
-      ))}
 
-      <TouchableOpacity onPress={() => {
-        setActiveDateField('FechaNacimiento');
-        setShowDatePicker(true);
-      }}>
-        <TextInput
-          label="Fecha de Nacimiento"
-          mode="outlined"
-          value={persona.FechaNacimiento}
-          editable={false}
-          style={styles.input}
-        />
-      </TouchableOpacity>
+        <Card style={styles.card}>
+          {renderSectionHeader("Datos Personales", "person", 0)}
+          
+          {activeSection === 0 && (
+            <View style={styles.sectionContent}>
+              <View style={styles.row}>
+                <View style={styles.halfInput}>
+                  <TextInput
+                    label="Nombres"
+                    mode="outlined"
+                    value={persona.Nombres}
+                    onChangeText={text => handleInput('persona', 'Nombres', text)}
+                    style={styles.input}
+                    left={<TextInput.Icon icon="account" />}
+                  />
+                </View>
+                <View style={styles.halfInput}>
+                  <TextInput
+                    label="Apellidos"
+                    mode="outlined"
+                    value={persona.Apellidos}
+                    onChangeText={text => handleInput('persona', 'Apellidos', text)}
+                    style={styles.input}
+                    left={<TextInput.Icon icon="account" />}
+                  />
+                </View>
+              </View>
 
-      {showDatePicker && (
-        <DateTimePicker
-          value={persona.FechaNacimiento ? new Date(persona.FechaNacimiento) : new Date()}
-          mode="date"
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-          maximumDate={new Date()}
-          onChange={handleDateChange}
-        />
-      )}
+              {renderDropdown('tipo-id', 'Tipo de Identificación', dropdownOptions.TipoIdentificacion, 'persona', 'TipoIdentificacion')}
 
-      {persona.EstadoCivil === 'Casado' && (
-        <>
-          <Text variant="titleMedium" style={styles.sectionTitle}>Datos del Cónyuge</Text>
-          {['NombreApellidos', 'NumeroCedula', 'NumeroPersonasACargo'].map(field => (
-            <TextInput
-              key={field}
-              label={field}
-              mode="outlined"
-              keyboardType={field.includes('Numero') ? 'numeric' : 'default'}
-              value={conyuge[field]}
-              onChangeText={text => handleInput('conyuge', field, text)}
-              style={styles.input}
-            />
-          ))}
-        </>
-      )}
-
-      <Text variant="headlineSmall" style={styles.sectionTitle}>Datos de la Solicitud</Text>
-
-      {['NumeroSolicitud', 'MontoSolicitado', 'PlazoFinanciero', 'TasaInteresAnual', 'Estado'].map(field => (
-        <TextInput
-          key={field}
-          label={field}
-          mode="outlined"
-          keyboardType={['MontoSolicitado', 'PlazoFinanciero', 'TasaInteresAnual'].includes(field) ? 'numeric' : 'default'}
-          value={solicitud[field]}
-          onChangeText={text => handleInput('solicitud', field, text)}
-          style={styles.input}
-        />
-      ))}
-
-      <View style={styles.input}>
-        <Menu
-          visible={menuVisible['TipoMoneda']}
-          onDismiss={() => toggleMenu('TipoMoneda')}
-          anchor={
-            <TouchableOpacity onPress={() => toggleMenu('TipoMoneda')}>
               <TextInput
-                label="TipoMoneda"
+                label="Número de Identificación"
                 mode="outlined"
-                value={solicitud.TipoMoneda}
-                editable={false}
-                pointerEvents="none"
+                value={persona.NumeroIdentificacion}
+                onChangeText={text => handleInput('persona', 'NumeroIdentificacion', text)}
+                style={styles.input}
+                left={<TextInput.Icon icon="card-account-details" />}
+                placeholder={persona.TipoIdentificacion === 'DUI' ? '000-000000-0000A' : 'Ingrese número'}
               />
-            </TouchableOpacity>
-          }
-        >
-          {dropdownOptions.TipoMoneda.map(option => (
-            <Menu.Item
-              key={option}
-              onPress={() => {
-                handleInput('solicitud', 'TipoMoneda', option);
-                toggleMenu('TipoMoneda');
-              }}
-              title={option}
-            />
-          ))}
-        </Menu>
-      </View>
 
-      <View style={styles.input}>
-        <Menu
-          visible={menuVisible['PropositoPrestamo']}
-          onDismiss={() => toggleMenu('PropositoPrestamo')}
-          anchor={
-            <TouchableOpacity onPress={() => toggleMenu('PropositoPrestamo')}>
+              {renderDropdown('sexo', 'Sexo', dropdownOptions.Sexo, 'persona', 'Sexo')}
+              {renderDropdown('estado-civil', 'Estado Civil', dropdownOptions.EstadoCivil, 'persona', 'EstadoCivil')}
+
               <TextInput
-                label="PropositoPrestamo"
+                label="Nacionalidad"
                 mode="outlined"
-                value={solicitud.PropositoPrestamo}
-                editable={false}
-                pointerEvents="none"
+                value={persona.Nacionalidad}
+                onChangeText={text => handleInput('persona', 'Nacionalidad', text)}
+                style={styles.input}
+                left={<TextInput.Icon icon="earth" />}
               />
-            </TouchableOpacity>
-          }
-        >
-          {dropdownOptions.PropositoPrestamo.map(option => (
-            <Menu.Item
-              key={option}
-              onPress={() => {
-                handleInput('solicitud', 'PropositoPrestamo', option);
-                toggleMenu('PropositoPrestamo');
-              }}
-              title={option}
-            />
-          ))}
-        </Menu>
-      </View>
 
-      <Button mode="contained" onPress={handleGuardar} style={{ marginTop: 20 }}>
-        Guardar
-      </Button>
-    </ScrollView>
+              <TouchableOpacity onPress={() => {
+                setActiveDateField('FechaNacimiento');
+                setShowDatePicker(true);
+              }}>
+                <View style={styles.datePickerContainer}>
+                  <Text style={styles.datePickerLabel}>Fecha de Nacimiento</Text>
+                  <View style={styles.datePickerValue}>
+                    <Text style={styles.datePickerText}>
+                      {persona.FechaNacimiento || 'Seleccionar fecha'}
+                    </Text>
+                    <MaterialIcons name="calendar-today" size={20} color="#666" />
+                  </View>
+                </View>
+              </TouchableOpacity>
+
+              {showDatePicker && Platform.OS !== 'web' && (
+                <DateTimePicker
+                  value={persona.FechaNacimiento ? new Date(persona.FechaNacimiento) : new Date()}
+                  mode="date"
+                  display="default"
+                  maximumDate={new Date()}
+                  onChange={handleDateChange}
+                />
+              )}
+
+              {/* DatePicker para web */}
+              {showDatePicker && Platform.OS === 'web' && (
+                <View style={styles.webDatePicker}>
+                  <input
+                    type="date"
+                    value={persona.FechaNacimiento || ''}
+                    onChange={(e) => {
+                      handleInput('persona', 'FechaNacimiento', e.target.value);
+                      setShowDatePicker(false);
+                    }}
+                    max={new Date().toISOString().split('T')[0]}
+                    style={styles.webDateInput}
+                  />
+                  <Button 
+                    onPress={() => setShowDatePicker(false)}
+                    style={styles.webDateClose}
+                  >
+                    Cerrar
+                  </Button>
+                </View>
+              )}
+            </View>
+          )}
+        </Card>
+
+        {persona.EstadoCivil === 'Casado' && (
+          <Card style={styles.card}>
+            {renderSectionHeader("Datos del Cónyuge", "people", 1)}
+            
+            {activeSection === 1 && (
+              <View style={styles.sectionContent}>
+                <TextInput
+                  label="Nombre Completo"
+                  mode="outlined"
+                  value={conyuge.NombreApellidos}
+                  onChangeText={text => handleInput('conyuge', 'NombreApellidos', text)}
+                  style={styles.input}
+                  left={<TextInput.Icon icon="account" />}
+                />
+
+                <TextInput
+                  label="Número de Cédula"
+                  mode="outlined"
+                  value={conyuge.NumeroCedula}
+                  onChangeText={text => handleInput('conyuge', 'NumeroCedula', text)}
+                  style={styles.input}
+                  left={<TextInput.Icon icon="card-account-details" />}
+                  keyboardType="numeric"
+                />
+
+                <TextInput
+                  label="Número de Personas a Cargo"
+                  mode="outlined"
+                  value={conyuge.NumeroPersonasACargo}
+                  onChangeText={text => handleInput('conyuge', 'NumeroPersonasACargo', text)}
+                  style={styles.input}
+                  left={<TextInput.Icon icon="account-group" />}
+                  keyboardType="numeric"
+                />
+              </View>
+            )}
+          </Card>
+        )}
+
+        <Card style={styles.card}>
+          {renderSectionHeader("Datos de la Solicitud", "file-document", 2)}
+          
+          {activeSection === 2 && (
+            <View style={styles.sectionContent}>
+              <TextInput
+                label="Número de Solicitud"
+                mode="outlined"
+                value={solicitud.NumeroSolicitud}
+                onChangeText={text => handleInput('solicitud', 'NumeroSolicitud', text)}
+                style={styles.input}
+                left={<TextInput.Icon icon="numeric" />}
+              />
+
+              <View style={styles.row}>
+                <View style={styles.halfInput}>
+                  <TextInput
+                    label="Monto Solicitado"
+                    mode="outlined"
+                    value={solicitud.MontoSolicitado}
+                    onChangeText={text => handleInput('solicitud', 'MontoSolicitado', text)}
+                    style={styles.input}
+                    left={<TextInput.Icon icon="currency-usd" />}
+                    keyboardType="numeric"
+                  />
+                </View>
+                <View style={styles.halfInput}>
+                  {renderDropdown('moneda', 'Moneda', dropdownOptions.TipoMoneda, 'solicitud', 'TipoMoneda')}
+                </View>
+              </View>
+
+              <View style={styles.row}>
+                <View style={styles.halfInput}>
+                  <TextInput
+                    label="Plazo (meses)"
+                    mode="outlined"
+                    value={solicitud.PlazoFinanciero}
+                    onChangeText={text => handleInput('solicitud', 'PlazoFinanciero', text)}
+                    style={styles.input}
+                    left={<TextInput.Icon icon="calendar" />}
+                    keyboardType="numeric"
+                  />
+                </View>
+                <View style={styles.halfInput}>
+                  <TextInput
+                    label="Tasa de Interés Anual (%)"
+                    mode="outlined"
+                    value={solicitud.TasaInteresAnual}
+                    onChangeText={text => handleInput('solicitud', 'TasaInteresAnual', text)}
+                    style={styles.input}
+                    left={<TextInput.Icon icon="percent" />}
+                    keyboardType="numeric"
+                  />
+                </View>
+              </View>
+
+              {renderDropdown('proposito', 'Propósito del Préstamo', dropdownOptions.PropositoPrestamo, 'solicitud', 'PropositoPrestamo')}
+              {renderDropdown('estado-solicitud', 'Estado de Solicitud', dropdownOptions.Estado, 'solicitud', 'Estado')}
+            </View>
+          )}
+        </Card>
+
+        <Button 
+          mode="contained" 
+          onPress={handleGuardar} 
+          style={styles.submitButton}
+          contentStyle={styles.submitButtonContent}
+          icon="check-circle"
+        >
+          Guardar y Continuar
+        </Button>
+
+        <View style={styles.progressContainer}>
+          <Text style={styles.progressText}>Paso 1 de 3 - Información Personal</Text>
+          <View style={styles.progressBar}>
+            <View style={styles.progressFill} />
+          </View>
+        </View>
+      </ScrollView>
+
+      {/* Modal para dropdowns (funciona en web y móvil) */}
+      <Portal>
+        <Modal
+          visible={showDropdown}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setShowDropdown(false)}
+        >
+          <TouchableWithoutFeedback onPress={() => setShowDropdown(false)}>
+            <View style={styles.modalOverlay}>
+              <TouchableWithoutFeedback>
+                <View style={styles.modalContent}>
+                  <View style={styles.modalHeader}>
+                    <Text style={styles.modalTitle}>{dropdownData.label}</Text>
+                    <TouchableOpacity onPress={() => setShowDropdown(false)}>
+                      <MaterialIcons name="close" size={24} color="#333" />
+                    </TouchableOpacity>
+                  </View>
+                  <FlatList
+                    data={dropdownData.options}
+                    keyExtractor={(item, index) => index.toString()}
+                    renderItem={({ item }) => (
+                      <TouchableOpacity 
+                        style={styles.modalItem}
+                        onPress={() => handleSelectOption(item)}
+                      >
+                        <Text style={styles.modalItemText}>{item}</Text>
+                      </TouchableOpacity>
+                    )}
+                    ItemSeparatorComponent={() => <View style={styles.separator} />}
+                  />
+                </View>
+              </TouchableWithoutFeedback>
+            </View>
+          </TouchableWithoutFeedback>
+        </Modal>
+      </Portal>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
+    flexGrow: 1,
+    backgroundColor: '#f5f7fa',
+    padding: 16,
+    paddingBottom: 40,
+  },
+  header: {
+    alignItems: 'center',
+    marginBottom: 24,
+    paddingTop: 16,
+  },
+  headerTitle: {
+    fontWeight: 'bold',
+    color: '#1a237e',
+    marginBottom: 4,
+  },
+  headerSubtitle: {
+    color: '#666',
+    textAlign: 'center',
+  },
+  card: {
+    marginBottom: 16,
+    borderRadius: 12,
+    elevation: 3,
+    overflow: 'hidden',
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#f0f4ff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  activeSectionHeader: {
+    backgroundColor: '#2196F3',
+  },
+  sectionHeaderContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  sectionHeaderText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+  },
+  activeSectionHeaderText: {
+    color: '#fff',
+  },
+  sectionContent: {
     padding: 16,
   },
-  heading: {
+  inputContainer: {
     marginBottom: 16,
-    fontWeight: 'bold',
-  },
-  sectionTitle: {
-    marginTop: 20,
-    marginBottom: 8,
-    fontWeight: '600',
   },
   input: {
+    backgroundColor: '#fff',
+  },
+  dropdownContainer: {
+    marginBottom: 8,
+  },
+  dropdownLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 4,
+    marginLeft: 4,
+  },
+  dropdownValueContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+    backgroundColor: '#fff',
+  },
+  dropdownValue: {
+    fontSize: 16,
+    color: '#333',
+  },
+  placeholder: {
+    color: '#999',
+  },
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    gap: 12,
+  },
+  halfInput: {
+    flex: 1,
+  },
+  datePickerContainer: {
+    marginBottom: 16,
+  },
+  datePickerLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 4,
+    marginLeft: 4,
+  },
+  datePickerValue: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+    backgroundColor: '#fff',
+  },
+  datePickerText: {
+    fontSize: 16,
+    color: '#333',
+  },
+  webDatePicker: {
+    marginTop: 16,
+    padding: 16,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  webDateInput: {
+    width: '100%',
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 4,
+    fontSize: 16,
     marginBottom: 12,
+  },
+  webDateClose: {
+    marginTop: 8,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    width: '90%',
+    maxWidth: 400,
+    backgroundColor: 'white',
+    borderRadius: 12,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+  },
+  modalItem: {
+    padding: 16,
+  },
+  modalItemText: {
+    fontSize: 16,
+    color: '#333',
+  },
+  separator: {
+    height: 1,
+    backgroundColor: '#eee',
+    marginHorizontal: 16,
+  },
+  submitButton: {
+    marginTop: 24,
+    marginBottom: 16,
+    borderRadius: 8,
+    backgroundColor: '#2196F3',
+    paddingVertical: 8,
+  },
+  submitButtonContent: {
+    paddingVertical: 8,
+  },
+  progressContainer: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  progressText: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 8,
+  },
+  progressBar: {
+    width: '100%',
+    height: 6,
+    backgroundColor: '#e0e0e0',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    width: '33%',
+    height: '100%',
+    backgroundColor: '#2196F3',
   },
 });

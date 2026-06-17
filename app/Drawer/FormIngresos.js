@@ -1,8 +1,21 @@
-import React, { useState } from 'react';
-import { ScrollView, StyleSheet, Platform, View, TouchableOpacity } from 'react-native';
-import { TextInput, Button, Text, Divider, Menu } from 'react-native-paper';
+import { MaterialIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useState } from 'react';
+import {
+  Alert,
+  FlatList,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  TouchableWithoutFeedback,
+  View,
+} from 'react-native';
+import { Button, Card, Portal, Text, TextInput } from 'react-native-paper';
 import api from '../../Services/Api';
 
 const opcionesEmpleo = ['Empleado', 'Desempleado', 'Independiente', 'Jubilado'];
@@ -13,8 +26,16 @@ export default function FormularioIngresos() {
   const { personaID } = useLocalSearchParams();
 
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
   const [activeDateField, setActiveDateField] = useState('');
-  const [menuVisible, setMenuVisible] = useState({});
+  const [activeDropdown, setActiveDropdown] = useState({
+    key: '',
+    label: '',
+    options: [],
+    field: '',
+    setState: null,
+  });
+  const [loading, setLoading] = useState(false);
 
   const [laboral, setLaboral] = useState({
     TipoEmpleo: '',
@@ -52,14 +73,33 @@ export default function FormularioIngresos() {
     NumeroContacto: '',
   });
 
-  const toggleMenu = (key) => {
-    setMenuVisible((prev) => ({ ...prev, [key]: !prev[key] }));
+  const openDropdown = (key, label, options, field, setState) => {
+    setActiveDropdown({ key, label, options, field, setState });
+    setShowDropdown(true);
+  };
+
+  const handleSelectOption = (option) => {
+    if (activeDropdown.setState && activeDropdown.field) {
+      if (activeDropdown.key === 'EstadoDomicilio') {
+        activeDropdown.setState(prev => ({
+          ...prev,
+          [activeDropdown.field]: option,
+          MontoMensualidad: option === 'Propio' ? '0' : '',
+        }));
+      } else {
+        activeDropdown.setState(prev => ({
+          ...prev,
+          [activeDropdown.field]: option,
+        }));
+      }
+    }
+    setShowDropdown(false);
   };
 
   const handleDateChange = (event, selectedDate) => {
     setShowDatePicker(false);
-    const date = selectedDate || new Date();
-    const dateString = date.toISOString().split('T')[0];
+    if (!selectedDate) return;
+    const dateString = selectedDate.toISOString().split('T')[0];
 
     if (activeDateField === 'FechaContratacion') {
       setLaboral((prev) => ({ ...prev, FechaContratacion: dateString }));
@@ -70,277 +110,636 @@ export default function FormularioIngresos() {
     setActiveDateField('');
   };
 
-  const renderInputs = (obj, setObj, keyboard = 'default') =>
-    Object.entries(obj).map(([key, value]) => {
-      if (key === 'MontoMensualidad' && domicilio.EstadoDomicilio === 'Propio') return null;
+  // VALIDACIÓN MEJORADA
+  const validateForm = () => {
+    const errors = [];
 
-      return (
-        <TextInput
-          key={key}
-          label={key}
-          value={value}
-          onChangeText={(text) => setObj((prev) => ({ ...prev, [key]: text }))}
-          style={styles.input}
-          keyboardType={keyboard}
-          mode="outlined"
-        />
-      );
-    });
+    // Validar campos requeridos laborales
+    if (!laboral.TipoEmpleo) errors.push('Tipo de empleo es requerido');
+    if (!laboral.LugarTrabajo) errors.push('Lugar de trabajo es requerido');
+    if (!laboral.IngresosMensuales) errors.push('Ingresos mensuales son requeridos');
+    
+    // Validar domicilio
+    if (!domicilio.Direccion) errors.push('Dirección es requerida');
+    if (!domicilio.EstadoDomicilio) errors.push('Estado del domicilio es requerido');
+    if (!domicilio.Departamento) errors.push('Departamento es requerido');
+    if (!domicilio.Municipio) errors.push('Municipio es requerido');
+    if (!domicilio.Barrio) errors.push('Barrio es requerido');
+    
+    // Validar referencias
+    if (!referenciasPersonales.NombreApellido) errors.push('Nombre de referencia es requerido');
+    if (!referenciasPersonales.NumeroContacto) errors.push('Número de contacto es requerido');
+
+    return errors;
+  };
 
   const handleEnviarFormulario = async () => {
+    const errors = validateForm();
+    if (errors.length > 0) {
+      Alert.alert(
+        'Campos requeridos',
+        errors.join('\n'),
+        [{ text: 'Entendido', style: 'cancel' }]
+      );
+      return;
+    }
+
+    setLoading(true);
     try {
       // Si no se seleccionó fecha, usar fecha actual
       const today = new Date().toISOString().split('T')[0];
 
+      // 1. Preparar datos laborales - Asegurar que todos los campos tengan valor
       const datosLaboral = {
-        ...laboral,
+        TipoEmpleo: laboral.TipoEmpleo || '',
+        LugarTrabajo: laboral.LugarTrabajo || '',
         FechaContratacion: laboral.FechaContratacion || today,
         FechaAlCorriente: laboral.FechaAlCorriente || today,
-        IdPersona: personaID,
+        IngresosMensuales: laboral.IngresosMensuales || '0',
+        MontoGarantia: laboral.MontoGarantia || '0',
+        MontoDeudas: laboral.MontoDeudas || '0',
+        IdPersona: personaID, // Mantener como está
       };
 
-      const datosDomicilio = {
-        ...domicilio,
-        MontoMensualidad: domicilio.EstadoDomicilio === 'Propio' ? '0' : domicilio.MontoMensualidad,
-        IdPersona: personaID,
-      };
+      console.log('Enviando datos laborales:', datosLaboral);
 
-      await api.post('/laborales/', datosLaboral);
-      await api.post('/domicilios/', datosDomicilio);
-      await api.post('/gastos/', { ...gastosMensuales, IdPersona: personaID });
-      await api.post('/referencias/', { ...referenciasPersonales, IdPersona: personaID });
+      // 2. Enviar todos los datos en orden
+      const respuestas = await Promise.all([
+        api.post('/laborales/', datosLaboral),
+        api.post('/domicilios/', {
+          ...domicilio,
+          MontoMensualidad: domicilio.EstadoDomicilio === 'Propio' ? '0' : (domicilio.MontoMensualidad || '0'),
+          IdPersona: personaID,
+        }),
+        api.post('/gastos/', {
+          ...gastosMensuales,
+          IdPersona: personaID,
+        }),
+        api.post('/referencias/', {
+          ...referenciasPersonales,
+          IdPersona: personaID,
+        }),
+      ]);
 
-      alert('Formulario enviado correctamente');
-      router.push({
-        pathname: '/Drawer/AmortizacionCalculada',
-          params: { personaID: personaID },
-      });
+      console.log('Todas las respuestas:', respuestas.map(r => r.status));
+
+      Alert.alert(
+        '✅ Éxito',
+        'Formulario enviado correctamente',
+        [
+          {
+            text: 'Continuar',
+            onPress: () => router.push({
+              pathname: '/Drawer/AmortizacionCalculada',
+              params: { personaID: personaID },
+            }),
+          },
+        ]
+      );
 
     } catch (error) {
-      console.error('Error al enviar formulario:', error.response?.data || error);
-      alert('Error al enviar formulario. Verifica los datos.');
+      console.error('Error completo:', error);
+      console.error('Respuesta del error:', error.response?.data);
+      
+      let mensajeError = 'Error al enviar formulario.';
+      if (error.response?.data) {
+        if (typeof error.response.data === 'object') {
+          mensajeError = Object.entries(error.response.data)
+            .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`)
+            .join('\n');
+        } else {
+          mensajeError = error.response.data;
+        }
+      }
+
+      Alert.alert(
+        '❌ Error',
+        mensajeError,
+        [{ text: 'Entendido', style: 'cancel' }]
+      );
+    } finally {
+      setLoading(false);
     }
   };
 
+  const renderDropdownField = (label, value, options, key, state, setState, fieldName) => (
+    <TouchableOpacity
+      onPress={() => openDropdown(key, label, options, fieldName, setState)}
+      style={styles.dropdownContainer}
+    >
+      <Text style={styles.dropdownLabel}>{label}</Text>
+      <View style={styles.dropdownValue}>
+        <Text style={value ? styles.dropdownText : styles.dropdownPlaceholder}>
+          {value || `Seleccionar ${label.toLowerCase()}`}
+        </Text>
+        <MaterialIcons name="expand-more" size={24} color="#666" />
+      </View>
+    </TouchableOpacity>
+  );
+
+  const renderDateField = (label, value, fieldName) => (
+    <TouchableOpacity
+      onPress={() => {
+        setActiveDateField(fieldName);
+        setShowDatePicker(true);
+      }}
+      style={styles.dateContainer}
+    >
+      <Text style={styles.dateLabel}>{label}</Text>
+      <View style={styles.dateValue}>
+        <MaterialIcons name="calendar-today" size={20} color="#6366F1" style={styles.dateIcon} />
+        <Text style={value ? styles.dateText : styles.datePlaceholder}>
+          {value || `Seleccionar ${label.toLowerCase()}`}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+
+  const renderInputField = (label, value, onChange, keyboardType = 'default', multiline = false) => (
+    <View style={styles.inputContainer}>
+      <Text style={styles.inputLabel}>{label}</Text>
+      <TextInput
+        value={value}
+        onChangeText={onChange}
+        style={[styles.input, multiline && styles.multilineInput]}
+        keyboardType={keyboardType}
+        mode="outlined"
+        outlineColor="#e0e0e0"
+        activeOutlineColor="#6366F1"
+        multiline={multiline}
+        numberOfLines={multiline ? 4 : 1}
+      />
+    </View>
+  );
+
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.header}>Formulario de Ingresos</Text>
-
-      <Divider style={styles.divider} />
-      <Text style={styles.sectionTitle}>Información Laboral</Text>
-
-      {/* Tipo de Empleo - select */}
-      <View style={styles.input}>
-        <Menu
-          visible={menuVisible.TipoEmpleo}
-          onDismiss={() => toggleMenu('TipoEmpleo')}
-          anchor={
-            <TouchableOpacity onPress={() => toggleMenu('TipoEmpleo')}>
-              <TextInput
-                label="Tipo de Empleo"
-                mode="outlined"
-                value={laboral.TipoEmpleo}
-                editable={false}
-                pointerEvents="none"
-              />
-            </TouchableOpacity>
-          }
+    <>
+      <SafeAreaView style={styles.container}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardView}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0}
         >
-          {opcionesEmpleo.map((option) => (
-            <Menu.Item
-              key={option}
-              onPress={() => {
-                setLaboral((prev) => ({ ...prev, TipoEmpleo: option }));
-                toggleMenu('TipoEmpleo');
-              }}
-              title={option}
-            />
-          ))}
-        </Menu>
-      </View>
+          <ScrollView contentContainerStyle={styles.scrollContent}>
+            <View style={styles.header}>
+              <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                <MaterialIcons name="arrow-back" size={24} color="#6366F1" />
+              </TouchableOpacity>
+              <Text style={styles.headerTitle}>Información Adicional</Text>
+            </View>
 
-      <TextInput
-        label="Lugar de Trabajo"
-        value={laboral.LugarTrabajo}
-        onChangeText={(text) => setLaboral({ ...laboral, LugarTrabajo: text })}
-        style={styles.input}
-        mode="outlined"
-      />
+            {/* SECCIÓN LABORAL */}
+            <Card style={styles.sectionCard}>
+              <View style={styles.sectionHeader}>
+                <MaterialIcons name="work" size={24} color="#6366F1" />
+                <Text style={styles.sectionTitle}>Información Laboral</Text>
+              </View>
+              <Card.Content>
+                {renderDropdownField(
+                  'Tipo de Empleo',
+                  laboral.TipoEmpleo,
+                  opcionesEmpleo,
+                  'TipoEmpleo',
+                  laboral,
+                  setLaboral,
+                  'TipoEmpleo'
+                )}
 
-      <TextInput
-        label="Fecha de Contratación"
-        value={laboral.FechaContratacion}
-        onFocus={() => {
-          setActiveDateField('FechaContratacion');
-          setShowDatePicker(true);
-        }}
-        style={styles.input}
-        mode="outlined"
-      />
+                {renderInputField(
+                  'Lugar de Trabajo',
+                  laboral.LugarTrabajo,
+                  (text) => setLaboral(prev => ({ ...prev, LugarTrabajo: text }))
+                )}
 
-      <TextInput
-        label="Fecha al Corriente"
-        value={laboral.FechaAlCorriente}
-        onFocus={() => {
-          setActiveDateField('FechaAlCorriente');
-          setShowDatePicker(true);
-        }}
-        style={styles.input}
-        mode="outlined"
-      />
+                <View style={styles.dateRow}>
+                  {renderDateField('Fecha de Contratación', laboral.FechaContratacion, 'FechaContratacion')}
+                  {renderDateField('Fecha al Corriente', laboral.FechaAlCorriente, 'FechaAlCorriente')}
+                </View>
 
-      <TextInput
-        label="Ingresos Mensuales"
-        value={laboral.IngresosMensuales}
-        onChangeText={(text) => setLaboral({ ...laboral, IngresosMensuales: text })}
-        keyboardType="numeric"
-        style={styles.input}
-        mode="outlined"
-      />
-      <TextInput
-        label="Monto Garantía"
-        value={laboral.MontoGarantia}
-        onChangeText={(text) => setLaboral({ ...laboral, MontoGarantia: text })}
-        keyboardType="numeric"
-        style={styles.input}
-        mode="outlined"
-      />
-      <TextInput
-        label="Monto Deudas"
-        value={laboral.MontoDeudas}
-        onChangeText={(text) => setLaboral({ ...laboral, MontoDeudas: text })}
-        keyboardType="numeric"
-        style={styles.input}
-        mode="outlined"
-      />
+                {renderInputField(
+                  'Ingresos Mensuales ($)',
+                  laboral.IngresosMensuales,
+                  (text) => setLaboral(prev => ({ ...prev, IngresosMensuales: text })),
+                  'numeric'
+                )}
 
-      <Divider style={styles.divider} />
-      <Text style={styles.sectionTitle}>Domicilio</Text>
+                {renderInputField(
+                  'Monto Garantía ($)',
+                  laboral.MontoGarantia,
+                  (text) => setLaboral(prev => ({ ...prev, MontoGarantia: text })),
+                  'numeric'
+                )}
 
-      <TextInput
-        label="Dirección"
-        value={domicilio.Direccion}
-        onChangeText={(text) => setDomicilio({ ...domicilio, Direccion: text })}
-        style={styles.input}
-        mode="outlined"
-      />
+                {renderInputField(
+                  'Monto Deudas ($)',
+                  laboral.MontoDeudas,
+                  (text) => setLaboral(prev => ({ ...prev, MontoDeudas: text })),
+                  'numeric'
+                )}
+              </Card.Content>
+            </Card>
 
-      {/* Estado Domicilio - select */}
-      <View style={styles.input}>
-        <Menu
-          visible={menuVisible.EstadoDomicilio}
-          onDismiss={() => toggleMenu('EstadoDomicilio')}
-          anchor={
-            <TouchableOpacity onPress={() => toggleMenu('EstadoDomicilio')}>
-              <TextInput
-                label="Estado Domicilio"
-                mode="outlined"
-                value={domicilio.EstadoDomicilio}
-                editable={false}
-                pointerEvents="none"
-              />
-            </TouchableOpacity>
-          }
-        >
-          {opcionesEstadoDomicilio.map((option) => (
-            <Menu.Item
-              key={option}
-              onPress={() => {
-                setDomicilio((prev) => ({
-                  ...prev,
-                  EstadoDomicilio: option,
-                  MontoMensualidad: option === 'Propio' ? '0' : '',
-                }));
-                toggleMenu('EstadoDomicilio');
-              }}
-              title={option}
-            />
-          ))}
-        </Menu>
-      </View>
+            {/* SECCIÓN DOMICILIO */}
+            <Card style={styles.sectionCard}>
+              <View style={styles.sectionHeader}>
+                <MaterialIcons name="home" size={24} color="#6366F1" />
+                <Text style={styles.sectionTitle}>Domicilio</Text>
+              </View>
+              <Card.Content>
+                {renderInputField(
+                  'Dirección',
+                  domicilio.Direccion,
+                  (text) => setDomicilio(prev => ({ ...prev, Direccion: text })),
+                  'default',
+                  true
+                )}
 
-      {/* Monto mensualidad solo si NO es propio */}
-      {domicilio.EstadoDomicilio !== 'Propio' && (
-        <TextInput
-          label="Monto Mensualidad"
-          value={domicilio.MontoMensualidad}
-          onChangeText={(text) => setDomicilio({ ...domicilio, MontoMensualidad: text })}
-          keyboardType="numeric"
-          style={styles.input}
-          mode="outlined"
-        />
-      )}
+                {renderDropdownField(
+                  'Estado del Domicilio',
+                  domicilio.EstadoDomicilio,
+                  opcionesEstadoDomicilio,
+                  'EstadoDomicilio',
+                  domicilio,
+                  setDomicilio,
+                  'EstadoDomicilio'
+                )}
 
-      <TextInput
-        label="Departamento"
-        value={domicilio.Departamento}
-        onChangeText={(text) => setDomicilio({ ...domicilio, Departamento: text })}
-        style={styles.input}
-        mode="outlined"
-      />
-      <TextInput
-        label="Municipio"
-        value={domicilio.Municipio}
-        onChangeText={(text) => setDomicilio({ ...domicilio, Municipio: text })}
-        style={styles.input}
-        mode="outlined"
-      />
-      <TextInput
-        label="Barrio"
-        value={domicilio.Barrio}
-        onChangeText={(text) => setDomicilio({ ...domicilio, Barrio: text })}
-        style={styles.input}
-        mode="outlined"
-      />
+                {domicilio.EstadoDomicilio && domicilio.EstadoDomicilio !== 'Propio' && (
+                  renderInputField(
+                    'Monto Mensualidad ($)',
+                    domicilio.MontoMensualidad,
+                    (text) => setDomicilio(prev => ({ ...prev, MontoMensualidad: text })),
+                    'numeric'
+                  )
+                )}
 
-      <Divider style={styles.divider} />
-      <Text style={styles.sectionTitle}>Gastos Mensuales</Text>
-      {renderInputs(gastosMensuales, setGastosMensuales, 'numeric')}
+                <View style={styles.row}>
+                  <View style={[styles.inputContainer, { flex: 1, marginRight: 8 }]}>
+                    {renderInputField(
+                      'Departamento',
+                      domicilio.Departamento,
+                      (text) => setDomicilio(prev => ({ ...prev, Departamento: text }))
+                    )}
+                  </View>
+                  <View style={[styles.inputContainer, { flex: 1, marginLeft: 8 }]}>
+                    {renderInputField(
+                      'Municipio',
+                      domicilio.Municipio,
+                      (text) => setDomicilio(prev => ({ ...prev, Municipio: text }))
+                    )}
+                  </View>
+                </View>
 
-      <Divider style={styles.divider} />
-      <Text style={styles.sectionTitle}>Referencias Personales</Text>
-      {renderInputs(referenciasPersonales, setReferenciasPersonales)}
+                {renderInputField(
+                  'Barrio',
+                  domicilio.Barrio,
+                  (text) => setDomicilio(prev => ({ ...prev, Barrio: text }))
+                )}
+              </Card.Content>
+            </Card>
 
-      {showDatePicker && (
+            {/* SECCIÓN GASTOS */}
+            <Card style={styles.sectionCard}>
+              <View style={styles.sectionHeader}>
+                <MaterialIcons name="attach-money" size={24} color="#6366F1" />
+                <Text style={styles.sectionTitle}>Gastos Mensuales</Text>
+              </View>
+              <Card.Content>
+                <View style={styles.gridContainer}>
+                  {Object.entries(gastosMensuales).map(([key, value]) => (
+                    <View key={key} style={styles.gridItem}>
+                      {renderInputField(
+                        key.replace(/([A-Z])/g, ' $1').trim(),
+                        value,
+                        (text) => setGastosMensuales(prev => ({ ...prev, [key]: text })),
+                        'numeric'
+                      )}
+                    </View>
+                  ))}
+                </View>
+              </Card.Content>
+            </Card>
+
+            {/* SECCIÓN REFERENCIAS */}
+            <Card style={styles.sectionCard}>
+              <View style={styles.sectionHeader}>
+                <MaterialIcons name="people" size={24} color="#6366F1" />
+                <Text style={styles.sectionTitle}>Referencias Personales</Text>
+              </View>
+              <Card.Content>
+                {renderInputField(
+                  'Nombre y Apellido',
+                  referenciasPersonales.NombreApellido,
+                  (text) => setReferenciasPersonales(prev => ({ ...prev, NombreApellido: text }))
+                )}
+
+                {renderInputField(
+                  'Número de Contacto',
+                  referenciasPersonales.NumeroContacto,
+                  (text) => setReferenciasPersonales(prev => ({ ...prev, NumeroContacto: text })),
+                  'phone-pad'
+                )}
+              </Card.Content>
+            </Card>
+
+            {/* BOTÓN ENVIAR */}
+            <Button
+              mode="contained"
+              onPress={handleEnviarFormulario}
+              loading={loading}
+              disabled={loading}
+              style={styles.submitButton}
+              contentStyle={styles.submitButtonContent}
+              icon="send"
+            >
+              {loading ? 'Enviando...' : 'Enviar Formulario'}
+            </Button>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+
+      {/* DATE PICKER */}
+      {showDatePicker && Platform.OS !== 'web' && (
         <DateTimePicker
           value={new Date()}
           mode="date"
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          display="default"
           onChange={handleDateChange}
         />
       )}
 
-      <Button mode="contained" onPress={handleEnviarFormulario} style={styles.button}>
-        Enviar Formulario
-      </Button>
-    </ScrollView>
+      {/* DATE PICKER PARA WEB */}
+      {showDatePicker && Platform.OS === 'web' && (
+        <View style={styles.webDatePicker}>
+          <input
+            type="date"
+            value={activeDateField === 'FechaContratacion' 
+              ? laboral.FechaContratacion 
+              : laboral.FechaAlCorriente || ''}
+            onChange={(e) => {
+              const dateString = e.target.value;
+              if (activeDateField === 'FechaContratacion') {
+                setLaboral(prev => ({ ...prev, FechaContratacion: dateString }));
+              } else if (activeDateField === 'FechaAlCorriente') {
+                setLaboral(prev => ({ ...prev, FechaAlCorriente: dateString }));
+              }
+              setShowDatePicker(false);
+            }}
+            style={styles.webDateInput}
+          />
+          <Button onPress={() => setShowDatePicker(false)} style={styles.webDateButton}>
+            Cerrar
+          </Button>
+        </View>
+      )}
+
+      {/* DROPDOWN MODAL */}
+      <Portal>
+        <Modal
+          visible={showDropdown}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setShowDropdown(false)}
+        >
+          <TouchableWithoutFeedback onPress={() => setShowDropdown(false)}>
+            <View style={styles.modalOverlay}>
+              <TouchableWithoutFeedback>
+                <View style={styles.modalContent}>
+                  <View style={styles.modalHeader}>
+                    <Text style={styles.modalTitle}>{activeDropdown.label}</Text>
+                    <TouchableOpacity onPress={() => setShowDropdown(false)}>
+                      <MaterialIcons name="close" size={24} color="#333" />
+                    </TouchableOpacity>
+                  </View>
+                  <FlatList
+                    data={activeDropdown.options}
+                    keyExtractor={(item, index) => index.toString()}
+                    renderItem={({ item }) => (
+                      <TouchableOpacity
+                        style={styles.modalItem}
+                        onPress={() => handleSelectOption(item)}
+                      >
+                        <Text style={styles.modalItemText}>{item}</Text>
+                      </TouchableOpacity>
+                    )}
+                    ItemSeparatorComponent={() => <View style={styles.modalSeparator} />}
+                  />
+                </View>
+              </TouchableWithoutFeedback>
+            </View>
+          </TouchableWithoutFeedback>
+        </Modal>
+      </Portal>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+  },
+  keyboardView: {
+    flex: 1,
+  },
+  scrollContent: {
     padding: 16,
     paddingBottom: 100,
   },
   header: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    marginBottom: 16,
-    textAlign: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
   },
-  input: {
-    marginVertical: 8,
+  backButton: {
+    padding: 8,
+    marginRight: 12,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1e293b',
+    flex: 1,
+  },
+  sectionCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    marginBottom: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    paddingBottom: 8,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
+    color: '#1e293b',
+    marginLeft: 12,
+  },
+  dropdownContainer: {
+    marginBottom: 16,
+  },
+  dropdownLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#334155',
+    marginBottom: 4,
+  },
+  dropdownValue: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+    backgroundColor: '#fff',
+  },
+  dropdownText: {
+    fontSize: 16,
+    color: '#1e293b',
+  },
+  dropdownPlaceholder: {
+    fontSize: 16,
+    color: '#94a3b8',
+  },
+  inputContainer: {
+    marginBottom: 16,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#334155',
+    marginBottom: 4,
+  },
+  input: {
+    backgroundColor: '#fff',
+  },
+  multilineInput: {
+    minHeight: 80,
+  },
+  dateContainer: {
+    marginBottom: 16,
+  },
+  dateLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#334155',
+    marginBottom: 4,
+  },
+  dateValue: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+    backgroundColor: '#fff',
+  },
+  dateIcon: {
+    marginRight: 8,
+  },
+  dateText: {
+    fontSize: 16,
+    color: '#1e293b',
+  },
+  datePlaceholder: {
+    fontSize: 16,
+    color: '#94a3b8',
+  },
+  dateRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  gridContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  gridItem: {
+    width: '48%',
+    marginBottom: 16,
+  },
+  submitButton: {
     marginTop: 24,
-    marginBottom: 8,
+    backgroundColor: '#6366F1',
+    borderRadius: 8,
+    paddingVertical: 8,
   },
-  button: {
-    marginTop: 32,
+  submitButtonContent: {
+    paddingVertical: 8,
   },
-  divider: {
-    marginVertical: 16,
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    width: '90%',
+    maxWidth: 400,
+    backgroundColor: 'white',
+    borderRadius: 12,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+  },
+  modalItem: {
+    padding: 16,
+  },
+  modalItemText: {
+    fontSize: 16,
+    color: '#333',
+  },
+  modalSeparator: {
+    height: 1,
+    backgroundColor: '#eee',
+    marginHorizontal: 16,
+  },
+  webDatePicker: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: [{ translateX: -150 }, { translateY: -100 }],
+    backgroundColor: 'white',
+    padding: 20,
+    borderRadius: 8,
+    elevation: 5,
+    zIndex: 1000,
+  },
+  webDateInput: {
+    width: 250,
+    padding: 10,
+    fontSize: 16,
+    border: '1px solid #ccc',
+    borderRadius: 4,
+  },
+  webDateButton: {
+    marginTop: 10,
   },
 });
