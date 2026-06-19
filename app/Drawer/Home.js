@@ -1,4 +1,3 @@
-import { MaterialIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
@@ -19,7 +18,7 @@ import {
     Text,
     TextInput,
 } from 'react-native-paper';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons as ExpoMaterialIcons } from '@expo/vector-icons';
 import api from '../../Services/Api';
 import { toast } from '../../lib/toast';
 
@@ -264,7 +263,7 @@ export default function HomeScreen() {
               ]}>
                 {value || 'Seleccionar'}
               </Text>
-              <MaterialIcons name="arrow-drop-down" size={24} color="#666" />
+              <ExpoMaterialIcons name="arrow-drop-down" size={24} color="#666" />
             </View>
           </View>
         </TouchableOpacity>
@@ -281,7 +280,7 @@ export default function HomeScreen() {
       onPress={() => setActiveSection(sectionIndex)}
     >
       <View style={styles.sectionHeaderContent}>
-        <MaterialIcons name={icon} size={24} color={activeSection === sectionIndex ? "#fff" : "#2196F3"} />
+        <ExpoMaterialIcons name={icon} size={24} color={activeSection === sectionIndex ? "#fff" : "#2196F3"} />
         <Text style={[
           styles.sectionHeaderText,
           activeSection === sectionIndex && styles.activeSectionHeaderText
@@ -289,7 +288,7 @@ export default function HomeScreen() {
           {title}
         </Text>
       </View>
-      <MaterialIcons 
+      <ExpoMaterialIcons 
         name={activeSection === sectionIndex ? "keyboard-arrow-up" : "keyboard-arrow-down"} 
         size={24} 
         color={activeSection === sectionIndex ? "#fff" : "#666"} 
@@ -367,7 +366,7 @@ export default function HomeScreen() {
                     <Text style={styles.datePickerText}>
                       {persona.FechaNacimiento || 'Seleccionar fecha'}
                     </Text>
-                    <MaterialIcons name="calendar-today" size={20} color="#666" />
+                    <ExpoMaterialIcons name="calendar-today" size={20} color="#666" />
                   </View>
                 </View>
               </TouchableOpacity>
@@ -541,7 +540,7 @@ export default function HomeScreen() {
                   <View style={styles.modalHeader}>
                     <Text style={styles.modalTitle}>{dropdownData.label}</Text>
                     <TouchableOpacity onPress={() => setShowDropdown(false)}>
-                      <MaterialIcons name="close" size={24} color="#333" />
+                      <ExpoMaterialIcons name="close" size={24} color="#333" />
                     </TouchableOpacity>
                   </View>
                   <FlatList
