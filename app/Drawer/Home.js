@@ -19,10 +19,13 @@ import {
     Text,
     TextInput,
 } from 'react-native-paper';
+import { MaterialIcons } from '@expo/vector-icons';
 import api from '../../Services/Api';
+import { toast } from '../../lib/toast';
 
 const dropdownOptions = {
   EstadoCivil: ['Soltero', 'Casado', 'Divorciado', 'Viudo'],
+  Nacionalidad: ['Nicaraguense', 'Salvadorena', 'Hondurena', 'Costarricense', 'Guatemalteca', 'Panamena', 'Otra'],
   Sexo: ['Masculino', 'Femenino', 'Otro'],
   TipoIdentificacion: ['DUI', 'Pasaporte', 'NIT', 'Otro'],
   TipoMoneda: ['C贸rdoba', 'D贸lar'],
@@ -37,6 +40,16 @@ const dropdownOptions = {
   Estado: ['En Proceso', 'Aprobado', 'Rechazada'],
 };
 
+const formatDui = (value) => {
+  const digits = value.replace(/\D/g, '').slice(0, 13);
+  const p1 = digits.slice(0, 6);
+  const p2 = digits.slice(6, 12);
+  const p3 = digits.slice(12, 13);
+  let out = p1;
+  if (p2) out += '-' + p2;
+  if (p3) out += '-' + p3;
+  return out;
+};
 // Valida fecha YYYY-MM-DD y que no sea futura
 const esFechaValida = (fechaStr) => {
   const fecha = new Date(fechaStr);
@@ -140,17 +153,21 @@ export default function HomeScreen() {
 
   const handleInput = (section, field, value) => {
     if (section === 'persona') {
-      let updatedPersona = { ...persona, [field]: value };
+      let nextValue = value;
+      if (field === 'NumeroIdentificacion' && persona.TipoIdentificacion === 'DUI') {
+        nextValue = formatDui(value);
+      }
+      let updatedPersona = { ...persona, [field]: nextValue };
 
       // Extraer fecha desde DUI para FechaNacimiento si aplica
-      if (field === 'NumeroIdentificacion' && persona.TipoIdentificacion === 'DUI' && value.length >= 14) {
-        const parts = value.split('-');
+      if (field === 'NumeroIdentificacion' && persona.TipoIdentificacion === 'DUI' && nextValue.length >= 14) {
+        const parts = nextValue.split('-');
         if (parts.length === 3 && parts[1].length === 6) {
           const day = parts[1].substring(0, 2);
           const month = parts[1].substring(2, 4);
           const year = parts[1].substring(4, 6);
-          const fullYear = parseInt(year) <= 25 ? `20${year}` : `19${year}`;
-          const fechaFormateada = `${fullYear}-${month}-${day}`;
+          const fullYear = parseInt(year, 10) <= 25 ? '20' + year : '19' + year;
+          const fechaFormateada = fullYear + '-' + month + '-' + day;
           if (esFechaValida(fechaFormateada)) {
             updatedPersona.FechaNacimiento = fechaFormateada;
           }
@@ -210,8 +227,23 @@ export default function HomeScreen() {
       });
 
     } catch (err) {
-      console.error('Error al guardar informaci贸n:', err);
-      alert('Error al guardar. Verifica los datos o la conexi贸n.');
+      console.error('Error al guardar informaci髇:', err?.response?.data || err);
+      let mensaje = 'Verifica los datos o la conexi髇.';
+      if (err?.response?.data) {
+        const data = err.response.data;
+        if (typeof data === 'string') {
+          mensaje = data;
+        } else if (typeof data === 'object') {
+          mensaje = Object.entries(data)
+            .map(([k, v]) => k + ': ' + (Array.isArray(v) ? v.join(', ') : v))
+            .join(' | ');
+        }
+      }
+      toast.show({
+        type: 'error',
+        text1: 'Error al guardar',
+        text2: mensaje,
+      });
     }
   };
 

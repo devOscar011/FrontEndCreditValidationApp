@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import { Button, Card, Portal, Text, TextInput } from 'react-native-paper';
 import api from '../../Services/Api';
+import { toast } from '../../lib/toast';
 
 const opcionesEmpleo = ['Empleado', 'Desempleado', 'Independiente', 'Jubilado'];
 const opcionesEstadoDomicilio = ['Propio', 'Alquilado', 'Familiar'];

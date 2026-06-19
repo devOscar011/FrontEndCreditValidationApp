@@ -36,6 +36,8 @@ export default function LoginScreen() {
 
       if (access) {
         await AsyncStorage.setItem('token', access)
+        await AsyncStorage.setItem('sessionUser', email)
+        await AsyncStorage.removeItem('sessionRole')
         router.replace('/Drawer/Personas')
       } else {
         setError('Respuesta inesperada del servidor.')

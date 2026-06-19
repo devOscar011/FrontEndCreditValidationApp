@@ -24,6 +24,11 @@ import * as Animatable from 'react-native-animatable';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import api from '../../Services/Api';
+import { toast } from '../../lib/toast';
+
+const { width } = Dimensions.get('window');
+const isWeb = Platform.OS === 'web';
+const isTablet = width >= 768;
 
 const { width } = Dimensions.get('window');
 const isWeb = Platform.OS === 'web';

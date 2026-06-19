@@ -23,6 +23,21 @@ import {
   TextInput,
 } from 'react-native-paper';
 import api from '../../Services/Api';
+import { toast } from '../../lib/toast';
+
+const opcionesIdentificacion = ['DUI', 'Pasaporte', 'NIT', 'Otro'];
+const opcionesEstadoCivil = ['Soltero', 'Casado', 'Divorciado', 'Viudo'];
+const opcionesSexo = ['Masculino', 'Femenino', 'Otro'];
+const opcionesMoneda = ['Córdoba', 'Dólar'];
+const opcionesEstado = ['Aprobado', 'Rechazada', 'En proceso', 'Pendiente'];
+const opcionesProposito = [
+  'Capital inversión',
+  'Mejoramiento Vivienda',
+  'Compra Vehículo',
+  'Pago Servicios de Salud',
+  'Pago de Deudas',
+  'Otro',
+];
 
 const opcionesIdentificacion = ['DUI', 'Pasaporte', 'NIT', 'Otro'];
 const opcionesEstadoCivil = ['Soltero', 'Casado', 'Divorciado', 'Viudo'];
