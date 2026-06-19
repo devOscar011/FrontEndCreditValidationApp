@@ -55,24 +55,6 @@ export default function UsersScreen() {
     fetchUsers()
   }, [])
 
-  useEffect(() => {
-    setPage(1)
-  }, [users, pageSize])
-
-  useEffect(() => {
-    setPage(1)
-  }, [userSearchQuery])
-
-  const query = userSearchQuery.trim().toLowerCase()
-  const filteredUsers = users.filter((u) =>
-    `${u.username || ''} ${u.email || ''}`.toLowerCase().includes(query)
-  )
-
-  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / pageSize))
-  const safePage = Math.min(page, totalPages)
-  const startIndex = (safePage - 1) * pageSize
-  const pagedUsers = filteredUsers.slice(startIndex, startIndex + pageSize)
-
   // Validaciones de campos
   const validateForm = () => {
     const errors = {}
