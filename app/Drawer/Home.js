@@ -1,24 +1,24 @@
+import { MaterialIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
-  Platform,
-  ScrollView,
-  StyleSheet,
-  TouchableOpacity,
-  View,
-  Modal,
-  TouchableWithoutFeedback,
-  FlatList,
+    FlatList,
+    Modal,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    TouchableOpacity,
+    TouchableWithoutFeedback,
+    View,
 } from 'react-native';
 import {
-  Button,
-  Text,
-  TextInput,
-  Card,
-  Portal,
+    Button,
+    Card,
+    Portal,
+    Text,
+    TextInput,
 } from 'react-native-paper';
-import { MaterialIcons } from '@expo/vector-icons';
 import api from '../../Services/Api';
 
 const dropdownOptions = {
@@ -183,12 +183,6 @@ export default function HomeScreen() {
   };
 
   const handleGuardar = async () => {
-    // Validar identificación según tipo
-    if (!validarIdentificacion(persona.TipoIdentificacion, persona.NumeroIdentificacion)) {
-      alert('Número de identificación no válido para el tipo seleccionado.');
-      return;
-    }
-
     try {
       // Crear persona
       const resPersona = await api.post('/personas/', {
