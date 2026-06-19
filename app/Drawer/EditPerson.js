@@ -39,20 +39,6 @@ const opcionesProposito = [
   'Otro',
 ];
 
-const opcionesIdentificacion = ['DUI', 'Pasaporte', 'NIT', 'Otro'];
-const opcionesEstadoCivil = ['Soltero', 'Casado', 'Divorciado', 'Viudo'];
-const opcionesSexo = ['Masculino', 'Femenino', 'Otro'];
-const opcionesMoneda = ['Córdoba', 'Dólar'];
-const opcionesEstado = ['Aprobado', 'Rechazada', 'En proceso', 'Pendiente'];
-const opcionesProposito = [
-  'Capital inversión',
-  'Mejoramiento Vivienda',
-  'Compra Vehículo',
-  'Pago Servicios de Salud',
-  'Pago de Deudas',
-  'Otro',
-];
-
 export default function EditPerson() {
   const { personaID } = useLocalSearchParams();
   const router = useRouter();
