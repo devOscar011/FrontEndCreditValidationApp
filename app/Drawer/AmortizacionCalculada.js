@@ -30,10 +30,6 @@ const { width } = Dimensions.get('window');
 const isWeb = Platform.OS === 'web';
 const isTablet = width >= 768;
 
-const { width } = Dimensions.get('window');
-const isWeb = Platform.OS === 'web';
-const isTablet = width >= 768;
-
 export default function AmortizacionCalculada() {
   const { personaID } = useLocalSearchParams();
   const [data, setData] = useState(null);
