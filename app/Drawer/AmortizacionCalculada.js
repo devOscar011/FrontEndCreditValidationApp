@@ -1,30 +1,26 @@
-import React, { useEffect, useState } from 'react';
-import { 
-  ScrollView, 
-  StyleSheet, 
-  ActivityIndicator, 
-  View, 
-  TouchableOpacity,
-  Dimensions,
-  Platform,
-  RefreshControl,
-  Linking
-} from 'react-native';
-import { 
-  Text, 
-  DataTable, 
-  Card, 
-  IconButton,
-  Chip,
-  Divider,
-  Badge
-} from 'react-native-paper';
-import { useLocalSearchParams } from 'expo-router';
-import * as Animatable from 'react-native-animatable';
+import { FontAwesome5, MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { MaterialIcons, FontAwesome5, Ionicons } from '@expo/vector-icons';
+import { useLocalSearchParams } from 'expo-router';
+import { useEffect, useState } from 'react';
+import {
+    ActivityIndicator,
+    Dimensions,
+    Platform,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    TouchableOpacity,
+    View
+} from 'react-native';
+import * as Animatable from 'react-native-animatable';
+import {
+    Card,
+    Chip,
+    DataTable,
+    Divider,
+    Text
+} from 'react-native-paper';
 import api from '../../Services/Api';
-import { toast } from '../../lib/toast';
 
 const { width } = Dimensions.get('window');
 const isWeb = Platform.OS === 'web';
