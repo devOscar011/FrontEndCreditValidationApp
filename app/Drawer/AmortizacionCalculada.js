@@ -3,22 +3,22 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Dimensions,
-    Platform,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Dimensions,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import * as Animatable from 'react-native-animatable';
 import {
-    Card,
-    Chip,
-    DataTable,
-    Divider,
-    Text
+  Card,
+  Chip,
+  DataTable,
+  Divider,
+  Text
 } from 'react-native-paper';
 import api from '../../Services/Api';
 
@@ -73,7 +73,7 @@ export default function AmortizacionCalculada() {
   const generatePDF = async () => {
   try {
     // profesional
-    const response = await api.get(`/reporte-credito-profesional/${personaID}/`, {
+    const response = await api.get(`/reporte-credito-pdf/${personaID}/`, {
       responseType: 'blob'
     });
 
